@@ -24,6 +24,8 @@ import streamlit as st
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import warnings; warnings.filterwarnings("ignore")
+import gspread
+
 
 st.set_page_config(page_title="Tablero de cartera — Diplomado ML Seguros",
                    page_icon="📊", layout="wide")
@@ -31,6 +33,13 @@ st.set_page_config(page_title="Tablero de cartera — Diplomado ML Seguros",
 # --- rutas ancladas a ESTA carpeta (clave para el deploy) ---------------------
 AQUI    = os.path.dirname(os.path.abspath(__file__))
 RUTA_DB = os.path.join(AQUI, "cartera.db")
+
+
+@st.cache_resource
+def hoja():
+    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+    return gc.open_by_url(st.secrets["sheet_url"]).sheet1
+
 
 def ruta_parquet():
     """Busca el parquet SIEMPRE relativo a la carpeta de la app."""
@@ -270,8 +279,18 @@ with tab_cotiza:
               "antiguedad": c3.slider("Antigüedad del vehículo", 0, 40, 5),
               "potencia": c4.slider("Potencia (HP)", 10, 200, 70),
               "bonus": c4.slider("Bonus-malus", 0, 25, 5)}
+    
     if st.button("Cotizar", type="primary"):
         st.session_state["perfil"] = perfil
+        p = st.session_state["perfil"]
+        pp_emp, n = cotizar_empirico(datos, p)
+        freq, sev, pp_glm, pp_tw = cotizar_glm(p, m_freq, m_sev, m_agg)
+        tarifa = pp_glm / (1 - gastos - margen)
+        hoja().append_row([pd.Timestamp.now().isoformat(),
+                           perfil["edad_conductor"], perfil["cobertura"], perfil["sexo"],
+                           perfil["uso"], perfil["combustible"], perfil["antiguedad"],
+                           perfil["potencia"], perfil["bonus"], round(pp_glm, 2), round(tarifa, 2)])
+        st.success("Cotización guardada ✔")
 
     if "perfil" in st.session_state:
         p = st.session_state["perfil"]
